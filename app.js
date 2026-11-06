@@ -675,6 +675,8 @@
       if (short.length) {
         body.appendChild(el(`<p class="tip warn-text">⚠ Не хватает: ${esc(short.map(([n, q]) => `${n} ${fmt(q - findByName(n).stock)}`).join(', '))}</p>`));
       }
+      body.appendChild(el('<div class="sub-title">Раскладка по контейнерам</div>'));
+      body.appendChild(buildContainers(B, plan));
       const btn = el('<button type="button" class="btn block">Списать продукты с остатков</button>');
       btn.onclick = () => writeOffBatch(plan);
       body.appendChild(btn);
@@ -688,17 +690,30 @@
     });
     list.appendChild(accordion('Процесс готовки по порядку', '~1,5 часа, духовка + плита параллельно', stepsBody, true));
 
-    // Контейнеры
-    const cont = el('<div class="containers"></div>');
-    B.containers.forEach(c => {
-      const box = el(`<div class="container-box"><div class="cb-label">${esc(c.label)}</div></div>`);
-      box.appendChild(ul(c.items));
-      cont.appendChild(box);
-    });
-    list.appendChild(accordion('Раскладка по контейнерам', `${B.containers.length} позиций на 3 дня`, cont, false));
-
     list.appendChild(accordion('Хранение и разогрев', '', ul(B.storage), false));
     root.appendChild(list);
+  }
+
+  // Контейнеры партии: на каждый день — обед и ужин с конкретным продуктом (курица/рыба), плюс общие
+  function buildContainers(B, plan) {
+    const cont = el('<div class="containers"></div>');
+    const n = plan.days.length;
+    plan.days.forEach(([day, kind]) => {
+      B.dayContainers.forEach(c => {
+        const items = c.items.map(t => t
+          .replace('{protein}', B.proteinNames[kind])
+          .replace('{eggs}', B.eggsByProtein[kind]));
+        const box = el(`<div class="container-box ${kind}"><div class="cb-label">${kind === 'chicken' ? '🍗' : '🐟'} ${esc(c.meal)} · ${esc(day)}</div></div>`);
+        box.appendChild(ul(items));
+        cont.appendChild(box);
+      });
+    });
+    B.commonContainers.forEach(c => {
+      const box = el(`<div class="container-box"><div class="cb-label">${esc(c.label.replace('{n}', n))}</div></div>`);
+      box.appendChild(ul(c.items.map(t => t.replace('{n}', n))));
+      cont.appendChild(box);
+    });
+    return cont;
   }
 
   function findByName(name) {

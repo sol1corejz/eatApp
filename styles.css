@@ -447,6 +447,8 @@ ul.steps li::before {
   background: #fafdfa;
   font-size: 13px;
 }
+.container-box.chicken { border-color: #ffcc80; background: #fff8f0; }
+.container-box.fish { border-color: #90caf9; background: #f3f9ff; }
 .cb-label { font-weight: 700; margin-bottom: 4px; }
 .container-box ul { padding-left: 16px; }
 .container-box li { margin: 2px 0; }

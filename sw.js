@@ -1,6 +1,6 @@
 /* Service Worker: кэширует оболочку приложения для работы офлайн.
    При изменении файлов увеличьте VERSION, чтобы обновить кэш у пользователей. */
-const VERSION = 'v3';
+const VERSION = 'v4';
 const CACHE = `eatapp-${VERSION}`;
 const ASSETS = [
   './',
