@@ -38,6 +38,8 @@
     shopHideTaken: false,
     cookOnlyAvailable: true,
     stockOnlyNeeded: false,
+    mealsView: 'day',
+    openRecipe: null,
   };
   function uid() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -436,9 +438,9 @@
     root.innerHTML = '';
     actions.innerHTML = '';
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.screen === screen));
-    const titles = { shop: 'Закупка', cook: 'Готовка', stock: 'Остатки' };
+    const titles = { shop: 'Закупка', cook: 'Готовка', meals: 'Блюда', stock: 'Остатки' };
     document.getElementById('screen-title').textContent = titles[screen];
-    ({ shop: renderShop, cook: renderCook, stock: renderStock })[screen](root, actions);
+    ({ shop: renderShop, cook: renderCook, meals: renderMeals, stock: renderStock })[screen](root, actions);
   }
 
   function searchBox(key, placeholder) {
@@ -565,6 +567,162 @@
       return wrap;
     };
     root.appendChild(buildList());
+  }
+
+  // --- Блюда ---
+  function renderMeals(root) {
+    const M = window.MEALS;
+    if (!M) { root.appendChild(el('<div class="empty">Данные меню не загружены</div>')); return; }
+
+    const tb = el('<div class="toolbar"></div>');
+    [['day', 'Меню дня'], ['recipes', 'Рецепты'], ['batch', 'Заготовки на 3 дня']].forEach(([id, text]) => {
+      tb.appendChild(chip(text, ui.mealsView === id, () => { ui.mealsView = id; render(); }));
+    });
+    root.appendChild(tb);
+
+    ({ day: renderMealsDay, recipes: renderMealsRecipes, batch: renderMealsBatch })[ui.mealsView](root, M);
+  }
+
+  function accordion(title, sub, bodyEl, open) {
+    const d = el(`
+      <details class="acc" ${open ? 'open' : ''}>
+        <summary><div><div class="acc-title">${esc(title)}</div>${sub ? `<div class="acc-sub">${esc(sub)}</div>` : ''}</div><span class="acc-chev">›</span></summary>
+        <div class="acc-body"></div>
+      </details>`);
+    d.querySelector('.acc-body').appendChild(bodyEl);
+    return d;
+  }
+  function ul(items, cls = '') {
+    return el(`<ul class="${cls}">${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>`);
+  }
+  function kv(rows) {
+    return el(`<div class="kv">${rows.map(([k, v]) => `<div class="kv-row"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>`);
+  }
+
+  function renderMealsDay(root, M) {
+    const wk = el('<div class="week"></div>');
+    const today = (new Date().getDay() + 6) % 7; // Пн = 0
+    M.week.forEach(([d, kind], i) => {
+      wk.appendChild(el(`<div class="week-day ${kind} ${i === today ? 'today' : ''}"><div>${d}</div><div class="week-ico">${kind === 'chicken' ? '🍗' : '🐟'}</div></div>`));
+    });
+    root.appendChild(el('<p class="summary">Чередование белка по дням недели</p>'));
+    root.appendChild(wk);
+
+    const mc = M.macros;
+    root.appendChild(el(`
+      <div class="card">
+        <div class="card-title">Итого за день</div>
+        <div class="macros">
+          <div><b>${mc.chicken.kcal}</b><span>ккал · курица</span></div>
+          <div><b>${mc.fish.kcal}</b><span>ккал · рыба</span></div>
+          <div><b>${mc.chicken.p}–${mc.fish.p}</b><span>белок, г</span></div>
+          <div><b>${mc.chicken.f}</b><span>жиры, г</span></div>
+          <div><b>${mc.chicken.c}</b><span>углеводы, г</span></div>
+        </div>
+        <p class="hint">${esc(mc.note)}</p>
+      </div>`));
+
+    const list = el('<div class="list"></div>');
+    M.dayPlan.forEach((m, i) => {
+      const body = document.createElement('div');
+      body.appendChild(kv(m.items));
+      if (m.recipe) {
+        const b = el('<button type="button" class="btn secondary small">Открыть рецепт</button>');
+        b.onclick = () => { ui.mealsView = 'recipes'; ui.openRecipe = m.recipe === 'protein' ? 'chicken' : m.recipe; render(); };
+        body.appendChild(b);
+      }
+      list.appendChild(accordion(m.title, m.time, body, i === 0));
+    });
+    root.appendChild(list);
+
+    const rules = el('<div class="card"><div class="card-title">Правила дня</div></div>');
+    rules.appendChild(ul(M.dayRules, 'rules'));
+    root.appendChild(rules);
+  }
+
+  function renderMealsRecipes(root, M) {
+    const list = el('<div class="list"></div>');
+    M.recipes.forEach(r => {
+      const body = document.createElement('div');
+      body.appendChild(el(`<p class="portion">${esc(r.portion)}</p>`));
+      body.appendChild(el('<div class="sub-title">Ингредиенты</div>'));
+      body.appendChild(ul(r.ingredients));
+      body.appendChild(el('<div class="sub-title">Приготовление</div>'));
+      body.appendChild(ul(r.steps, 'steps'));
+      if (r.tips) body.appendChild(el(`<p class="tip">💡 ${esc(r.tips)}</p>`));
+      list.appendChild(accordion(r.title, r.tag, body, ui.openRecipe === r.id));
+    });
+    ui.openRecipe = null;
+    root.appendChild(list);
+  }
+
+  function renderMealsBatch(root, M) {
+    const B = M.batch;
+    root.appendChild(el(`<div class="card"><p class="hint" style="margin:0">${esc(B.intro)}</p></div>`));
+
+    const list = el('<div class="list"></div>');
+
+    // Партии: что нужно и списание
+    B.plans.forEach(plan => {
+      const body = document.createElement('div');
+      body.appendChild(el('<div class="sub-title">Продукты на партию</div>'));
+      body.appendChild(kv(plan.products.map(([n, q, u]) => {
+        const p = findByName(n);
+        const have = p ? ` (есть ${fmt(p.stock)})` : ' (нет в списке)';
+        return [n, fmtQty(q, u) + have];
+      })));
+      const short = plan.products.filter(([n, q]) => { const p = findByName(n); return p && p.stock < q; });
+      if (short.length) {
+        body.appendChild(el(`<p class="tip warn-text">⚠ Не хватает: ${esc(short.map(([n, q]) => `${n} ${fmt(q - findByName(n).stock)}`).join(', '))}</p>`));
+      }
+      const btn = el('<button type="button" class="btn block">Списать продукты с остатков</button>');
+      btn.onclick = () => writeOffBatch(plan);
+      body.appendChild(btn);
+      list.appendChild(accordion(plan.title, plan.protein, body, false));
+    });
+
+    // Пошаговый процесс
+    const stepsBody = el('<ol class="timeline"></ol>');
+    B.steps.forEach(s => {
+      stepsBody.appendChild(el(`<li><div class="tl-time">${esc(s.t)}</div><div><div class="tl-title">${esc(s.title)}</div><div class="tl-text">${esc(s.text)}</div></div></li>`));
+    });
+    list.appendChild(accordion('Процесс готовки по порядку', '~1,5 часа, духовка + плита параллельно', stepsBody, true));
+
+    // Контейнеры
+    const cont = el('<div class="containers"></div>');
+    B.containers.forEach(c => {
+      const box = el(`<div class="container-box"><div class="cb-label">${esc(c.label)}</div></div>`);
+      box.appendChild(ul(c.items));
+      cont.appendChild(box);
+    });
+    list.appendChild(accordion('Раскладка по контейнерам', `${B.containers.length} позиций на 3 дня`, cont, false));
+
+    list.appendChild(accordion('Хранение и разогрев', '', ul(B.storage), false));
+    root.appendChild(list);
+  }
+
+  function findByName(name) {
+    const n = name.toLowerCase();
+    return state.products.find(p => p.name.toLowerCase() === n);
+  }
+
+  function writeOffBatch(plan) {
+    const found = plan.products.map(([n, q]) => [findByName(n), q]).filter(([p]) => p);
+    if (!found.length) { toast('Продукты из партии не найдены в списке'); return; }
+    if (!confirm(`Списать продукты партии «${plan.title}» с остатков (${found.length} поз.)?`)) return;
+    const before = found.map(([p]) => [p, p.stock]);
+    const ids = [];
+    found.forEach(([p, q]) => {
+      p.stock = Math.max(0, p.stock - q);
+      addHistory('use', p, q);
+      ids.push(state.history[0].id);
+    });
+    save(); render();
+    toast(`Списано: ${found.length} продуктов`, () => {
+      before.forEach(([p, s]) => { p.stock = s; });
+      state.history = state.history.filter(h => !ids.includes(h.id));
+      save(); render();
+    });
   }
 
   // --- Остатки ---
