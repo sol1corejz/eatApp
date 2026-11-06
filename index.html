@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#2e7d32" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Продукты" />
+  <title>Продукты — закупка и готовка</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="screen-title">Закупка</h1>
+    <div class="topbar-actions" id="topbar-actions"></div>
+  </header>
+
+  <main id="screen" class="screen"></main>
+
+  <nav class="tabbar">
+    <button class="tab" data-screen="shop">
+      <span class="tab-icon">🛒</span><span>Закупка</span>
+    </button>
+    <button class="tab" data-screen="cook">
+      <span class="tab-icon">🍳</span><span>Готовка</span>
+    </button>
+    <button class="tab" data-screen="stock">
+      <span class="tab-icon">📦</span><span>Остатки</span>
+    </button>
+  </nav>
+
+  <div id="modal-root"></div>
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
