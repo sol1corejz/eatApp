@@ -2,45 +2,31 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'eatapp.state.v1';
+  const STORAGE_KEY = 'eatapp.state.v2';
   const UNITS = { g: 'г', ml: 'мл', pcs: 'шт' };
 
-  // Предустановленный список продуктов: название, единица, план закупки, минимальный остаток
+  // Предустановленный список продуктов на неделю:
+  // категория, название, единица, план закупки, минимальный остаток (подсветка «мало»)
   const DEFAULT_PRODUCTS = [
-    ['Куриное филе', 'g', 1000, 300],
-    ['Говядина', 'g', 1000, 300],
-    ['Фарш', 'g', 500, 200],
-    ['Рыба', 'g', 600, 200],
-    ['Яйца', 'pcs', 20, 6],
-    ['Молоко', 'ml', 2000, 500],
-    ['Творог', 'g', 600, 200],
-    ['Сыр', 'g', 400, 100],
-    ['Сметана', 'g', 400, 100],
-    ['Масло сливочное', 'g', 200, 50],
-    ['Масло растительное', 'ml', 1000, 200],
-    ['Рис', 'g', 1000, 300],
-    ['Гречка', 'g', 1000, 300],
-    ['Макароны', 'g', 1000, 300],
-    ['Овсянка', 'g', 1000, 300],
-    ['Мука', 'g', 1000, 300],
-    ['Сахар', 'g', 1000, 300],
-    ['Соль', 'g', 500, 100],
-    ['Хлеб', 'pcs', 2, 1],
-    ['Картофель', 'g', 2000, 500],
-    ['Морковь', 'g', 1000, 300],
-    ['Лук', 'g', 1000, 300],
-    ['Чеснок', 'pcs', 3, 1],
-    ['Помидоры', 'g', 1000, 300],
-    ['Огурцы', 'g', 1000, 300],
-    ['Капуста', 'g', 1500, 500],
-    ['Перец болгарский', 'pcs', 4, 1],
-    ['Зелень', 'pcs', 2, 1],
-    ['Яблоки', 'g', 1500, 500],
-    ['Бананы', 'g', 1000, 300],
-    ['Лимон', 'pcs', 2, 1],
-    ['Чай', 'g', 200, 50],
-    ['Кофе', 'g', 250, 50],
+    ['Мясо/рыба/яйца', 'Куриная грудка', 'g', 1200, 300],
+    ['Мясо/рыба/яйца', 'Белая рыба', 'g', 900, 300],
+    ['Мясо/рыба/яйца', 'Яйца', 'pcs', 10, 3],
+    ['Крупы', 'Гречка', 'g', 350, 100],
+    ['Крупы', 'Овсянка', 'g', 350, 100],
+    ['Крупы', 'Картофель', 'g', 1400, 400],
+    ['Крупы', 'Бурый рис (опц.)', 'g', 150, 50],
+    ['Молочное', 'Греческий йогурт', 'g', 1050, 300],
+    ['Молочное', 'Творог', 'g', 1050, 300],
+    ['Овощи', 'Для запекания', 'g', 1750, 500],
+    ['Овощи', 'Для салата', 'g', 1400, 400],
+    ['Фрукты', 'Яблоки', 'pcs', 7, 2],
+    ['Фрукты', 'Ягоды', 'g', 700, 200],
+    ['Орехи/семена', 'Миндаль', 'g', 70, 20],
+    ['Орехи/семена', 'Чиа', 'g', 35, 10],
+    ['Жиры', 'Оливковое масло', 'g', 105, 30],
+    ['Прочее', 'Мёд', 'g', 50, 15],
   ];
+  const CATEGORY_ORDER = [...new Set(DEFAULT_PRODUCTS.map(r => r[0]))];
 
   // ---------- Состояние ----------
 
@@ -58,8 +44,8 @@
   }
 
   function makeDefaultProducts() {
-    return DEFAULT_PRODUCTS.map(([name, unit, plan, min]) => ({
-      id: uid(), name, unit, plan, min, stock: 0, taken: false, takenQty: 0,
+    return DEFAULT_PRODUCTS.map(([category, name, unit, plan, min], i) => ({
+      id: uid(), category, name, unit, plan, min, stock: 0, taken: false, takenQty: 0, order: i,
     }));
   }
 
@@ -121,8 +107,28 @@
   function matches(p, q) {
     return !q || p.name.toLowerCase().includes(q.toLowerCase());
   }
+  function catRank(c) {
+    const i = CATEGORY_ORDER.indexOf(c || '');
+    return i === -1 ? CATEGORY_ORDER.length : i;
+  }
+  // Порядок как в исходном списке: по категории, затем по порядковому номеру, затем по имени
   function sortByName(list) {
-    return list.slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    return list.slice().sort((a, b) =>
+      catRank(a.category) - catRank(b.category) ||
+      (a.order ?? 1e9) - (b.order ?? 1e9) ||
+      a.name.localeCompare(b.name, 'ru'));
+  }
+  // Добавляет в список заголовки категорий
+  function appendGrouped(list, items, makeRow) {
+    let last = null;
+    items.forEach(p => {
+      const cat = p.category || 'Прочее';
+      if (cat !== last) {
+        list.appendChild(el(`<div class="group-title">${esc(cat)}</div>`));
+        last = cat;
+      }
+      list.appendChild(makeRow(p));
+    });
   }
 
   // ---------- Toast ----------
@@ -279,13 +285,19 @@
 
   function productModal(p) {
     const isNew = !p;
-    const d = p || { name: '', unit: 'g', plan: 500, min: 100, stock: 0 };
+    const d = p || { name: '', category: 'Прочее', unit: 'g', plan: 500, min: 100, stock: 0 };
+    const cats = [...new Set([...CATEGORY_ORDER, ...state.products.map(x => x.category).filter(Boolean)])];
     const box = el(`
       <div>
         <h2>${isNew ? 'Новый продукт' : 'Редактировать продукт'}</h2>
         <div class="field">
           <label>Название</label>
           <input type="text" name="name" value="${esc(d.name)}" data-autofocus />
+        </div>
+        <div class="field">
+          <label>Категория</label>
+          <input type="text" name="category" list="cat-list" value="${esc(d.category || '')}" />
+          <datalist id="cat-list">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>
         </div>
         <div class="field-row">
           <div class="field">
@@ -324,6 +336,7 @@
       if (!name) { box.querySelector('[name="name"]').focus(); return; }
       const data = {
         name, unit: val('unit'),
+        category: val('category').trim() || 'Прочее',
         plan: Math.max(0, parseNum(val('plan'))),
         min: Math.max(0, parseNum(val('min'))),
         stock: Math.max(0, parseNum(val('stock'))),
@@ -468,14 +481,14 @@
       let items = state.products.filter(p => matches(p, q));
       if (ui.shopOnlyNeeded) items = items.filter(p => needsBuy(p) || p.taken);
       if (ui.shopHideTaken) items = items.filter(p => !p.taken);
-      items = sortByName(items).sort((a, b) => Number(a.taken) - Number(b.taken));
+      items = sortByName(items);
 
       const taken = state.products.filter(p => p.taken).length;
       wrap.appendChild(el(`<p class="summary">Взято: ${taken} из ${state.products.length}</p>`));
 
       const list = el('<div class="list"></div>');
       if (!items.length) list.appendChild(el('<div class="empty">Ничего не найдено</div>'));
-      items.forEach(p => {
+      appendGrouped(list, items, p => {
         const cls = ['item', p.taken ? 'done' : '', !p.taken && isEmpty(p) ? 'danger' : '', !p.taken && isLow(p) ? 'warn' : ''].join(' ');
         const row = el(`
           <div class="${cls}">
@@ -500,7 +513,7 @@
             extraButton: p.taken ? { text: 'Снять отметку', onClick: () => untake(p) } : null,
           });
         };
-        list.appendChild(row);
+        return row;
       });
       wrap.appendChild(list);
       return wrap;
@@ -522,7 +535,7 @@
       items = sortByName(items);
       const list = el('<div class="list"></div>');
       if (!items.length) list.appendChild(el('<div class="empty">Нет продуктов в наличии.<br>Отметьте покупки в разделе «Закупка».</div>'));
-      items.forEach(p => {
+      appendGrouped(list, items, p => {
         const cls = ['item', isEmpty(p) ? 'danger' : '', isLow(p) ? 'warn' : ''].join(' ');
         const row = el(`
           <div class="${cls}">
@@ -546,7 +559,7 @@
             onConfirm: qty => use(p, qty),
           });
         };
-        list.appendChild(row);
+        return row;
       });
       wrap.appendChild(list);
       return wrap;
@@ -570,16 +583,14 @@
       const wrap = el('<div class="list-wrap"></div>');
       let items = state.products.filter(p => matches(p, ui.search.stock));
       if (ui.stockOnlyNeeded) items = items.filter(needsBuy);
-      // Сначала закончившиеся, потом мало, потом остальные
-      items = sortByName(items).sort((a, b) => rank(a) - rank(b));
-      function rank(p) { return isEmpty(p) ? 0 : isLow(p) ? 1 : 2; }
+      items = sortByName(items);
 
       const need = state.products.filter(needsBuy).length;
       wrap.appendChild(el(`<p class="summary">Нужно докупить: ${need} из ${state.products.length}</p>`));
 
       const list = el('<div class="list"></div>');
       if (!items.length) list.appendChild(el('<div class="empty">Ничего не найдено</div>'));
-      items.forEach(p => {
+      appendGrouped(list, items, p => {
         const cls = ['item', isEmpty(p) ? 'danger' : '', isLow(p) ? 'warn' : ''].join(' ');
         const badge = isEmpty(p) ? '<span class="badge danger">Закончилось</span>' : isLow(p) ? '<span class="badge warn">Мало</span>' : '';
         const row = el(`
@@ -595,7 +606,7 @@
             </div>
           </div>`);
         row.onclick = () => productModal(p);
-        list.appendChild(row);
+        return row;
       });
       wrap.appendChild(list);
 
